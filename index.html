@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Photo Viewer</title>
+    <link rel="stylesheet" href="theStyles.css" />
+  </head>
+  <body>
+    <nav class="sidebar" id="sidebar" aria-label="Main navigation">
+
+    </nav>
+
+    <main class="content">
+      <h1 id="page-title">Photo Viewer</h1>
+      <div id="gallery" class="gallery-grid" aria-live="polite"></div>
+    </main>
+
+    <script>
+      document.addEventListener('DOMContentLoaded', async () => {
+        const sidebar = document.getElementById('sidebar');
+        const gallery = document.getElementById('gallery');
+
+        if (!sidebar || !gallery) return;
+
+        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
+
+        const addLink = (text, folderName) => {
+          const link = document.createElement('a');
+          link.href = '#';
+          link.textContent = text;
+          link.dataset.folder = folderName;
+          link.addEventListener('click', (event) => {
+            event.preventDefault();
+            renderFolder(folderName);
+          });
+          sidebar.appendChild(link);
+        };
+
+        const renderEmptyState = (message) => {
+          gallery.innerHTML = `<div class="empty-state">${message}</div>`;
+        };
+
+        const renderFolder = async (folderName) => {
+          const pageTitle = document.getElementById('page-title');
+          if (pageTitle) pageTitle.textContent = folderName;
+          const folderPath = `images/${encodeURIComponent(folderName)}/`;
+
+          try {
+            const response = await fetch(folderPath);
+            if (!response.ok) throw new Error('Folder not found');
+
+            const listing = await response.text();
+            const doc = new DOMParser().parseFromString(listing, 'text/html');
+            const photoLinks = [];
+
+            Array.from(doc.querySelectorAll('a')).forEach((link) => {
+              const href = link.getAttribute('href');
+              if (!href) return;
+
+              const cleanHref = href.split('?')[0].split('#')[0];
+              const fileName = cleanHref.split('/').filter(Boolean).pop();
+
+              if (!fileName || fileName === '..') return;
+
+              const normalized = fileName.toLowerCase();
+              const isImage = imageExtensions.some((ext) => normalized.endsWith(ext));
+
+              if (isImage) {
+                photoLinks.push(`${folderPath}${encodeURIComponent(fileName)}`);
+              }
+            });
+
+            gallery.innerHTML = '';
+
+            if (!photoLinks.length) {
+              renderEmptyState(`No photos found in ${folderName}.`);
+              return;
+            }
+
+            photoLinks.forEach((photoUrl) => {
+              const card = document.createElement('article');
+              card.className = 'photo-card';
+
+              const image = document.createElement('img');
+              image.src = photoUrl;
+              image.alt = 'Photo in folder';
+              image.style.cursor = 'pointer';
+              image.addEventListener('click', () => {
+                window.open(photoUrl, '_blank');
+              });
+
+              card.appendChild(image);
+              gallery.appendChild(card);
+            });
+          } catch (error) {
+            console.warn('Unable to load gallery for folder:', folderName, error);
+            renderEmptyState('This folder does not contain image files yet.');
+          }
+        };
+
+        try {
+          const response = await fetch('images/');
+          if (!response.ok) throw new Error('Unable to read images folder');
+
+          const listing = await response.text();
+          const doc = new DOMParser().parseFromString(listing, 'text/html');
+          const folderNames = new Set();
+
+          Array.from(doc.querySelectorAll('a')).forEach((link) => {
+            const href = link.getAttribute('href');
+            if (!href || href === '../' || href === './' || href.startsWith('?')) return;
+
+            const cleaned = href.replace(/\/$/, '');
+            const lastSegment = cleaned.split('/').filter(Boolean).pop();
+
+            if (!lastSegment || lastSegment.includes('.') || lastSegment === '..' || lastSegment === 'images') return;
+            folderNames.add(decodeURIComponent(lastSegment));
+          });
+
+          const sortedFolders = [...folderNames].sort();
+
+          if (!sortedFolders.length) {
+            renderEmptyState('No folders found in images.');
+            return;
+          }
+
+          sortedFolders.forEach((folderName) => addLink(decodeURIComponent(folderName), folderName));
+          renderFolder(sortedFolders[0]);
+        } catch (error) {
+          console.warn('No image folders found or directory listing not available:', error);
+          renderEmptyState('No image folders are available yet.');
+        }
+      });
+    </script>
+  </body>
+</html>
